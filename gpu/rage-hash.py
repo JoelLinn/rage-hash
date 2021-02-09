@@ -18,7 +18,7 @@ parallel = 100000
 sequential = 100000
 rnd_gen = np.random.default_rng()
 seeds = np.empty(parallel * 2, dtype=np.uint32)
-for i in range(parallel):
+for i in range(parallel * 2):
     t = np.uint32
     seeds[i] = rnd_gen.integers(low=np.iinfo(t).min, high=np.iinfo(t).max, dtype=t, endpoint=True)
 
