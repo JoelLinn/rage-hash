@@ -1,37 +1,55 @@
 
-#define MAX_NAME_LEN 64
+#define MAX_NAME_LEN 63
 #define GUESSES_PER_KERNEL (100 * 1000)
 
-// MWC64X
-// http://cas.ee.ic.ac.uk/people/dt10/research/rngs-gpu-mwc64x.html
-uint rnd(uint2 *state)
+// charset "_abcdefghijklmnopqrstuvwxyz" <=> '\0'..'\26'
+inline char char2num(char c)
 {
-    enum { A=4294883355U};
-    uint x=(*state).x, c=(*state).y;  // Unpack the state
-    uint res=x^c;                     // Calculate the result
-    uint hi=mul_hi(x,A);              // Step the RNG
-    x=x*A+c;
-    c=hi+(x<c);
-    *state=(uint2)(x,c);              // Pack the state back up
-    return res;                       // Return the next result
+  if (c > '_')
+  {
+    // skip '`'
+    c -= 1;
+  }
+  c -= '_';
+  return c;
+}
+inline char num2char(char c)
+{
+  c += '_';
+  if (c > '_')
+  {
+    // skip '`'
+    c += 1;
+  }
+  return c;
+}
+void name_real2fast(char* fast, uint* plen_fast, char* real)
+{
+  uint i = 0;
+  for (; real[i] != 0; i++)
+  {
+    fast[i] = char2num(real[i]);
+  }
+  *plen_fast = i;
+}
+void name_fast2real(char* real, char* fast, uint len_fast)
+{
+  uint i = 0;
+  for (; i < len_fast; i++)
+  {
+    real[i] = num2char(fast[i]);
+  }
+  real[i] = 0;
 }
 
-//inline uint rnd_range(uint* pseed, ulong min_inc, ulong max_exc)
-inline uint rnd_range(uint2* state, ulong min_inc, ulong max_exc)
-{
-  return rnd(state) % (max_exc - min_inc) + min_inc;
-}
-
-uint hash_name(char* name)
+// charset = '\0'..'\26'
+uint hash_name(char* name, uint name_len)
 {
   uint hash = 0;
   char c;
-  for (int i = 0;; i++)
+  for (int i = 0; i < name_len; i++)
   {
-    c = name[i];
-    if (!c) break;
-
-    hash += c;
+    hash += num2char(name[i]);
     hash += hash << 10;
     hash ^= hash >> 6;
   }
@@ -40,31 +58,78 @@ uint hash_name(char* name)
   return (hash + (hash << 15));
 }
 
-__kernel void sum(__global uint* seeds, uint hash, uint len_min, uint len_max)
+// charset = '\0'..'\26'
+bool name_add(char* a, char* b, uint len)
+{
+  char overflow = 0;
+  for (uint i = 0; i < len; i++)
+  {
+    //printf("%d %d %d %d \n", i, a[i], b[i], overflow);
+    char c = a[i] + b[i] + overflow;
+    overflow = 0;
+    if (c > 26)
+    {
+      overflow = 1;
+      c -= 27;
+    }
+    a[i] = c;
+  }
+  return !!overflow;
+}
+
+// charset = '\0'..'\26'
+bool name_next(char* n, uint len)
+{
+  for (uint i = 0; i < len; i++)
+  {
+    if (n[i] >= 26) {
+      // overflow
+      n[i] = 0;
+      continue;
+    }
+    ++n[i];
+    return false;
+	}
+  return true;
+}
+
+__kernel void brute(__global char* base_real, __global char* stride_fast, uint skip, uint len, uint count, uint hash)
 {
   int gid = get_global_id(1) * get_global_size(0) + get_global_id(0);
-  uint2 seed;
-  seed.x = seeds[gid * 2];
-  seed.y = seeds[gid * 2 + 1];
 
-  uint len;
-  char name[MAX_NAME_LEN];
-  // don't block too long, just enque another kernel
-  for (ulong i = 0; i < GUESSES_PER_KERNEL; i++)
+  char name[MAX_NAME_LEN + 1];
+  char stride[MAX_NAME_LEN];
+  for (uint i = 0; i < len; i++)
   {
-    len = rnd_range(&seed, len_min, min(len_max + 1, (uint)MAX_NAME_LEN));
-    name[len] = 0;
-    for (int j = 0; j < len; j++)
-    {
-      name[j] = rnd_range(&seed, 'a', 'z' + 2);
-      if (name[j] > 'z') name[j] = '_';
-    }
+    name[i] = base_real[i];
+    stride[i] = stride_fast[i];
+  }
+  name[len + 1] = 0;
+  name_real2fast(name, &len, name);
 
-    if (hash_name(name) == hash) {
-      printf("  Solved: %s\n", name);
+  uint i_;
+  for (uint i = 0; i < gid; i++)
+  {
+    i_ = i;
+    if (name_add(&name[skip], stride, len - skip))
+    {
+      // Overflow already
+      return;
     }
   }
 
-  seeds[gid * 2] = seed.x;
-  seeds[gid * 2 + 1] = seed.y;
+  for (uint i = 0; i < count; i++)
+  {
+    if (hash_name(name, len) == hash)
+    {
+      char name_pretty[MAX_NAME_LEN + 1];
+      name_fast2real(name_pretty, name, len);
+      printf("  Solved: %s\n", name_pretty);
+    }
+    if (name_next(&name[skip], len - skip))
+    {
+      // Overflow
+      break;
+    }
+  }
 }
