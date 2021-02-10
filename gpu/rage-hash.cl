@@ -44,15 +44,15 @@ __kernel void brute9(__global char* base_name, uint skip, uint hash)
   int remainder = gid;
   for (char i = 0; i < 4; i++)
   {
-    int c = remainder % 27;
-    if (c) c++; // skip '`'
+    char c = remainder % 27;
+    if (c > 0) c++; // skip '`'
     name[skip + i] = c + '_';
     remainder /= 27;
   }
 
-  // charset "_`abcdefghijklmnopqrstuvwxyz"
+  // charset "_abcdefghijklmnopqrstuvwxyz"
   uint hashes[6];
-  hashes[0] = hash_adds(hash_init(), &name[skip], skip + 4);
+  hashes[0] = hash_adds(hash_init(), name, skip + 4);
   char c[5];
   for (c[0] = '_'; c[0] <= 'z'; c[0]++)
   {

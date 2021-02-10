@@ -62,3 +62,5 @@ for len_full in range(len_min, len_max + 1):
             cl.cltypes.uint(hash))      # hash
         if not name_next(base_name, len_pref):
             break
+
+print("Done.")
