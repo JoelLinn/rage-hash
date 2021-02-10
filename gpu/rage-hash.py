@@ -55,7 +55,7 @@ for len_full in range(len_min, len_max + 1):
         buf_base_name = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=base_name)
         knl(
             queue,
-            (pow(28, 4),),
+            (pow(27, 4),),
             None,
             buf_base_name,              # name prefix
             cl.cltypes.uint(len_pref),  # skip

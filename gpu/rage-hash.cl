@@ -41,35 +41,38 @@ __kernel void brute9(__global char* base_name, uint skip, uint hash)
   }
   name[skip + 9] = 0;
 
-  // charset "_`abcdefghijklmnopqrstuvwxyz"
+  int remainder = gid;
+  for (char i = 0; i < 4; i++)
   {
-    int c = gid;
-    name[skip + 0] = c % 28 + '_';
-    c /= 28;
-    name[skip + 1] = c % 28 + '_';
-    c /= 28;
-    name[skip + 2] = c % 28 + '_';
-    c /= 28;
-    name[skip + 3] = c % 28 + '_';
+    int c = remainder % 27;
+    if (c) c++; // skip '`'
+    name[skip + i] = c + '_';
+    remainder /= 27;
   }
 
+  // charset "_`abcdefghijklmnopqrstuvwxyz"
   uint hashes[6];
   hashes[0] = hash_adds(hash_init(), &name[skip], skip + 4);
   char c[5];
   for (c[0] = '_'; c[0] <= 'z'; c[0]++)
   {
+    if (c[0] == '`') c[0]++;
     hashes[1] = hash_addc(hashes[0], c[0]);
     for (c[1] = '_'; c[1] <= 'z'; c[1]++)
     {
+      if (c[1] == '`') c[1]++;
       hashes[2] = hash_addc(hashes[1], c[1]);
       for (c[2] = '_'; c[2] <= 'z'; c[2]++)
       {
+        if (c[2] == '`') c[2]++;
         hashes[3] = hash_addc(hashes[2], c[2]);
         for (c[3] = '_'; c[3] <= 'z'; c[3]++)
         {
+          if (c[3] == '`') c[3]++;
           hashes[4] = hash_addc(hashes[3], c[3]);
           for (c[4] = '_'; c[4] <= 'z'; c[4]++)
           {
+            if (c[5] == '`') c[5]++;
             hashes[5] = hash_addc(hashes[4], c[4]);
             if (hash_final(hashes[5]) == hash)
             {
@@ -78,19 +81,6 @@ __kernel void brute9(__global char* base_name, uint skip, uint hash)
               name[skip + 6] = c[2];
               name[skip + 7] = c[3];
               name[skip + 8] = c[4];
-
-#if 0 // causes slow down, filter on CPU instead
-              bool skip = false;
-              for (char i = 0; i < 9; i++)
-              {
-                if (name[i] == '`')
-                {
-                  skip = true;
-                  break;
-                }
-              }
-              if (skip) continue; // unused character
-#endif
               printf("    Solved: %s\n", name);
             }
           }
