@@ -6,6 +6,20 @@ import sys
 print("Thanks to xSonoro & XeClutch for their work.")
 print("")
 
+def name_next(n, len):
+    for i in range(len):
+        if n[i] >= ord('z'):
+            #overflow
+            n[i] = ord('_')
+            continue
+        elif n[i] == ord('_'):
+            # skip '`'
+            n[i] = ord('a')
+        else:
+            n[i] = n[i] + 1
+        return True
+    return False
+
 ctx = cl.create_some_context()
 queue = cl.CommandQueue(ctx)
 
@@ -15,36 +29,36 @@ prg = cl.Program(ctx, f.read()).build()
 f.close()
 
 if len(sys.argv) != 4:
-    print("Invalid Arguments.")
+    print("Invalid argument count.")
     exit()
 
 hash = int(sys.argv[1], 16)
-print("Only len 8 for now")
-# len_min = int(sys.argv[2])
-# len_max = int(sys.argv[3])
+len_min = int(sys.argv[2])
+len_max = min(63, max(len_min, int(sys.argv[3])))
 
-kernel_hash_count = pow(27, 4)
-parallel_pow = 4 # 27 ^ x
-base_real = b'_' * 64
-stride_fast = np.empty((64,), dtype=np.uint8)
-stride_fast.fill(0)
-stride_fast[parallel_pow] = 1
+if len_min < 9:
+    print("Minimum length needs to be at least 9")
+    exit()
 
-mf = cl.mem_flags
-buf_base_real = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=base_real)
-buf_stride_fast = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=stride_fast)
+base_name = np.empty(64, dtype=np.uint8)
+base_name.fill(ord('_'))
+
 
 print("Solving hash: 0x{:02x}".format(hash))
-sys.stdout.flush()
 
-knl = prg.brute
-knl(
-    queue,
-    (pow(27, parallel_pow),),
-    None,
-    buf_base_real,
-    buf_stride_fast,
-    cl.cltypes.uint(0),                 # skip
-    cl.cltypes.uint(8),                 # len
-    cl.cltypes.uint(kernel_hash_count), # count
-    cl.cltypes.uint(hash))              # hash
+knl = prg.brute9
+for len_full in range(len_min, len_max + 1):
+    print("  Length: {: <2}".format(len_full))
+    len_pref = len_full - 9
+    while True:
+        sys.stdout.flush()
+        buf_base_name = cl.Buffer(ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=base_name)
+        knl(
+            queue,
+            (pow(28, 4),),
+            None,
+            buf_base_name,              # name prefix
+            cl.cltypes.uint(len_pref),  # skip
+            cl.cltypes.uint(hash))      # hash
+        if not name_next(base_name, len_pref):
+            break

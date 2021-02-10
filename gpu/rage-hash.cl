@@ -1,135 +1,101 @@
 
-#define MAX_NAME_LEN 63
-#define GUESSES_PER_KERNEL (100 * 1000)
+#define MAX_NAME_LEN 64
 
-// charset "_abcdefghijklmnopqrstuvwxyz" <=> '\0'..'\26'
-inline char char2num(char c)
+#define hash_init() 0
+uint hash_addc(uint hash, char c)
 {
-  if (c > '_')
-  {
-    // skip '`'
-    c -= 1;
-  }
-  c -= '_';
-  return c;
+  hash += c;
+  hash += hash << 10;
+  hash ^= hash >> 6;
+  return hash;
 }
-inline char num2char(char c)
+uint hash_adds(uint hash, char* s, uint len_s)
 {
-  c += '_';
-  if (c > '_')
+  for (uint i = 0; i < len_s; i++)
   {
-    // skip '`'
-    c += 1;
+    hash = hash_addc(hash, s[i]);
   }
-  return c;
+  return hash;
 }
-void name_real2fast(char* fast, uint* plen_fast, char* real)
+uint hash_final(uint hash)
 {
-  uint i = 0;
-  for (; real[i] != 0; i++)
-  {
-    fast[i] = char2num(real[i]);
-  }
-  *plen_fast = i;
-}
-void name_fast2real(char* real, char* fast, uint len_fast)
-{
-  uint i = 0;
-  for (; i < len_fast; i++)
-  {
-    real[i] = num2char(fast[i]);
-  }
-  real[i] = 0;
-}
-
-// charset = '\0'..'\26'
-uint hash_name(char* name, uint name_len)
-{
-  uint hash = 0;
-  char c;
-  for (int i = 0; i < name_len; i++)
-  {
-    hash += num2char(name[i]);
-    hash += hash << 10;
-    hash ^= hash >> 6;
-  }
   hash += hash << 3;
   hash ^= hash >> 11;
   return (hash + (hash << 15));
 }
-
-// charset = '\0'..'\26'
-bool name_add(char* a, char* b, uint len)
+inline uint hash_name(char* name, uint len_name)
 {
-  char overflow = 0;
-  for (uint i = 0; i < len; i++)
-  {
-    //printf("%d %d %d %d \n", i, a[i], b[i], overflow);
-    char c = a[i] + b[i] + overflow;
-    overflow = 0;
-    if (c > 26)
-    {
-      overflow = 1;
-      c -= 27;
-    }
-    a[i] = c;
-  }
-  return !!overflow;
+  return hash_final(hash_adds(hash_init(), name, len_name));
 }
 
-// charset = '\0'..'\26'
-bool name_next(char* n, uint len)
-{
-  for (uint i = 0; i < len; i++)
-  {
-    if (n[i] >= 26) {
-      // overflow
-      n[i] = 0;
-      continue;
-    }
-    ++n[i];
-    return false;
-	}
-  return true;
-}
-
-__kernel void brute(__global char* base_real, __global char* stride_fast, uint skip, uint len, uint count, uint hash)
+// brute on width of 9 characters
+// 28^4 kernels need to be run, which try 5 characters each
+__kernel void brute9(__global char* base_name, uint skip, uint hash)
 {
   int gid = get_global_id(1) * get_global_size(0) + get_global_id(0);
 
-  char name[MAX_NAME_LEN + 1];
-  char stride[MAX_NAME_LEN];
-  for (uint i = 0; i < len; i++)
+  char name[MAX_NAME_LEN];
+  for (uint i = 0; i < MAX_NAME_LEN; i++)
   {
-    name[i] = base_real[i];
-    stride[i] = stride_fast[i];
+    name[i] = base_name[i];
   }
-  name[len + 1] = 0;
-  name_real2fast(name, &len, name);
+  name[skip + 9] = 0;
 
-  uint i_;
-  for (uint i = 0; i < gid; i++)
+  // charset "_`abcdefghijklmnopqrstuvwxyz"
   {
-    i_ = i;
-    if (name_add(&name[skip], stride, len - skip))
-    {
-      // Overflow already
-      return;
-    }
+    int c = gid;
+    name[skip + 0] = c % 28 + '_';
+    c /= 28;
+    name[skip + 1] = c % 28 + '_';
+    c /= 28;
+    name[skip + 2] = c % 28 + '_';
+    c /= 28;
+    name[skip + 3] = c % 28 + '_';
   }
 
-  for (uint i = 0; i < count; i++)
+  uint hashes[6];
+  hashes[0] = hash_adds(hash_init(), &name[skip], skip + 4);
+  char c[5];
+  for (c[0] = '_'; c[0] <= 'z'; c[0]++)
   {
-    if (hash_name(name, len) == hash)
+    hashes[1] = hash_addc(hashes[0], c[0]);
+    for (c[1] = '_'; c[1] <= 'z'; c[1]++)
     {
-      char name_pretty[MAX_NAME_LEN + 1];
-      name_fast2real(name_pretty, name, len);
-      printf("  Solved: %s\n", name_pretty);
-    }
-    if (name_next(&name[skip], len - skip))
-    {
-      // Overflow
-      break;
+      hashes[2] = hash_addc(hashes[1], c[1]);
+      for (c[2] = '_'; c[2] <= 'z'; c[2]++)
+      {
+        hashes[3] = hash_addc(hashes[2], c[2]);
+        for (c[3] = '_'; c[3] <= 'z'; c[3]++)
+        {
+          hashes[4] = hash_addc(hashes[3], c[3]);
+          for (c[4] = '_'; c[4] <= 'z'; c[4]++)
+          {
+            hashes[5] = hash_addc(hashes[4], c[4]);
+            if (hash_final(hashes[5]) == hash)
+            {
+              name[skip + 4] = c[0];
+              name[skip + 5] = c[1];
+              name[skip + 6] = c[2];
+              name[skip + 7] = c[3];
+              name[skip + 8] = c[4];
+
+#if 0 // causes slow down, filter on CPU instead
+              bool skip = false;
+              for (char i = 0; i < 9; i++)
+              {
+                if (name[i] == '`')
+                {
+                  skip = true;
+                  break;
+                }
+              }
+              if (skip) continue; // unused character
+#endif
+              printf("    Solved: %s\n", name);
+            }
+          }
+        }
+      }
     }
   }
 }
