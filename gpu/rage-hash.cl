@@ -1,15 +1,27 @@
 
 #define MAX_NAME_LEN 64
 
+#if __CUDACC__
+#define KERNEL __global__
+#define FUNC __device__
+#define MEM_POINTER
+#define get_gid() (blockIdx.x * blockDim.x + threadIdx.x)
+#else // OpenCL
+#define KERNEL __kernel
+#define FUNC
+#define MEM_POINTER __global
+#define get_gid() (get_global_id(1) * get_global_size(0) + get_global_id(0))
+#endif
+
 #define hash_init() 0
-uint hash_addc(uint hash, char c)
+FUNC uint hash_addc(uint hash, char c)
 {
   hash += c;
   hash += hash << 10;
   hash ^= hash >> 6;
   return hash;
 }
-uint hash_adds(uint hash, char* s, uint len_s)
+FUNC uint hash_adds(uint hash, char* s, uint len_s)
 {
   for (uint i = 0; i < len_s; i++)
   {
@@ -17,25 +29,25 @@ uint hash_adds(uint hash, char* s, uint len_s)
   }
   return hash;
 }
-uint hash_final(uint hash)
+FUNC uint hash_final(uint hash)
 {
   hash += hash << 3;
   hash ^= hash >> 11;
   return (hash + (hash << 15));
 }
-inline uint hash_name(char* name, uint len_name)
+FUNC inline uint hash_name(char* name, uint len_name)
 {
   return hash_final(hash_adds(hash_init(), name, len_name));
 }
 
 // brute on width of 9 characters
 // 28^4 kernels need to be run, which try 5 characters each
-__kernel void brute9(__global char* base_name, uint skip, uint hash)
+KERNEL void brute9(MEM_POINTER char* base_name, uint skip, uint hash)
 {
-  int gid = get_global_id(1) * get_global_size(0) + get_global_id(0);
+  int gid = get_gid();
 
   char name[MAX_NAME_LEN];
-  for (uint i = 0; i < MAX_NAME_LEN; i++)
+  for (uint i = 0; i < skip; i++)
   {
     name[i] = base_name[i];
   }
