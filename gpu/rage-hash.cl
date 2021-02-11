@@ -72,7 +72,7 @@ __kernel void brute9(__global char* base_name, uint skip, uint hash)
           hashes[4] = hash_addc(hashes[3], c[3]);
           for (c[4] = '_'; c[4] <= 'z'; c[4]++)
           {
-            if (c[5] == '`') c[5]++;
+            if (c[4] == '`') c[4]++;
             hashes[5] = hash_addc(hashes[4], c[4]);
             if (hash_final(hashes[5]) == hash)
             {
